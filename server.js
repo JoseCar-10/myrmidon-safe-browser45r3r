@@ -38,7 +38,8 @@ app.post("/sandbox", async (req, res) => {
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage"
+        "--disable-dev-shm-usage",
+        "--ignore-certificate-errors"
       ]
     });
 
@@ -68,17 +69,20 @@ app.post("/sandbox", async (req, res) => {
     });
 
     const response = await page.goto(url, {
-      waitUntil: "networkidle",
-      timeout: 30000
+      waitUntil: "domcontentloaded",
+      timeout: 45000
     });
 
     const title = await page.title();
 
-    const bodyText = await page.locator("body")
+    const bodyText = await page
+      .locator("body")
       .innerText()
       .catch(() => "");
 
-    const passwordFields = await page.locator("input[type='password']").count();
+    const passwordFields = await page
+      .locator("input[type='password']")
+      .count();
 
     const screenshotBuffer = await page.screenshot({
       fullPage: true,
@@ -94,22 +98,32 @@ app.post("/sandbox", async (req, res) => {
     return res.json({
       input_url: url,
       final_url: finalUrl,
-      status: response?.status() || null,
+      status: response ? response.status() : null,
       title,
       screenshot_base64: screenshotBase64,
       redirects,
       requests: [...new Set(requests)].slice(0, 150),
       detections: {
         credential_form: passwordFields > 0,
-        fake_cloudflare: /verify you are human|checking your browser|cloudflare|just a moment/i.test(bodyText),
-        powershell_lure: /powershell|win\s*\+\s*r|cmd\.exe|run command|mshta|rundll32/i.test(bodyText),
-        clipboard_lure: /copy and paste|clipboard|ctrl\+v|press ctrl/i.test(bodyText),
-        suspicious_download_lure: /download|open file|enable content|enable macros|invoice|payment/i.test(bodyText)
+
+        fake_cloudflare:
+          /verify you are human|checking your browser|cloudflare|just a moment/i.test(bodyText),
+
+        powershell_lure:
+          /powershell|win\s*\+\s*r|cmd\.exe|run command|mshta|rundll32/i.test(bodyText),
+
+        clipboard_lure:
+          /copy and paste|clipboard|ctrl\+v|press ctrl/i.test(bodyText),
+
+        suspicious_download_lure:
+          /download|open file|enable content|enable macros|invoice|payment/i.test(bodyText)
       }
     });
 
   } catch (error) {
-    if (browser) await browser.close();
+    if (browser) {
+      await browser.close();
+    }
 
     return res.status(500).json({
       error: error.message
